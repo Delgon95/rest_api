@@ -9,10 +9,6 @@ from db import create_new_token, find_one, object_save, object_update, list_all
 from utils import json_response
 
 ##########
-# Token
-##########
-
-##########
 # User
 ##########
 
@@ -26,9 +22,6 @@ class User:
         self.edit_token = kwargs.get('edit_token', str(uuid.uuid4()))
         self.flag_create = kwargs.get('flag_create', False)
         self.token_create = kwargs.get('token_create')
-
-    def get_id(self):
-        return self._id
 
     def validate(self):
         for field in [self.login, self.password, self.first_name, self.last_name]:
@@ -72,14 +65,12 @@ class Ship:
         self._id = kwargs.get('_id')
         self.name = kwargs.get('name')
         self.crew_count = kwargs.get('crew_count')
-        self.capacity = kwargs.get('capacity')
+        self.during_cruise = kwargs.get('during_cruise', False)
 
+        self.during_cruise = kwargs.get('during_cruise', False)
         self.edit_token = kwargs.get('edit_token', str(uuid.uuid4()))
         self.flag_create = kwargs.get('flag_create', False)
         self.token_create = kwargs.get('token_create')
-
-    def get_id(self):
-        return self._id
 
     def validate(self):
         for field in [self.name, self.crew_count, self.capacity]:
@@ -115,18 +106,19 @@ class Cargo:
         self._id = kwargs.get('_id')
         self.capacity = kwargs.get('capacity')
         self.size = kwargs.get('size')
+        self.allocated = kwargs.get('allocated', 0)
+        self.during_cruise = kwargs.get('during_cruise', False)
 
         self.edit_token = kwargs.get('edit_token', str(uuid.uuid4()))
         self.flag_create = kwargs.get('flag_create', False)
         self.token_create = kwargs.get('token_create')
 
-    def get_id(self):
-        return self._id
-
-    def validate(self):
+    def validate(self, allocation_change=0):
         for field in [self.capacity, self.size]:
             if field is None:
                 return False
+        if self.capacity < self.allocated + allocation_change or self.allocated + allocation_change < 0:
+            False
         return True
 
     def create(self, collection):
@@ -134,7 +126,7 @@ class Cargo:
 
     def update(self, collection, id_):
         cargo = find_one(collection, id_, '_id')
-        if user is None:
+        if cargo is None:
             return json_response({"Error": "Cargo does not exist"}, 404)
 
         cargo = Cargo(**cargo)
@@ -159,19 +151,18 @@ class Product:
         self.name = kwargs.get('name')
         self.price = kwargs.get('price')
         self.weight = kwargs.get('weight')
-        self.size = kwargs.get('size')
+        self.size = kwargs.get('size', 0)
 
         self.edit_token = kwargs.get('edit_token', str(uuid.uuid4()))
         self.flag_create = kwargs.get('flag_create', False)
         self.token_create = kwargs.get('token_create')
 
-    def get_id(self):
-        return self._id
-
     def validate(self):
         for field in [self.cargo_id, self.name, self.price, self.weight, self.size]:
             if field is None:
                 return False
+        if self.size < 0:
+            False
         return True
 
     def create(self, collection):
@@ -179,10 +170,10 @@ class Product:
 
     def update(self, collection, id_):
         product = find_one(collection, id_, '_id')
-        if user is None:
+        if product is None:
             return json_response({"Error": "Product does not exist"}, 404)
 
-        product = Product(**cargo)
+        product = Product(**product)
         if product.edit_token != self.edit_token:
             return json_response({"Error": "ETag header was invalidated"}, 428)
 
@@ -208,6 +199,29 @@ class Cruise:
         self.edit_token = kwargs.get('edit_token', str(uuid.uuid4()))
         self.flag_create = kwargs.get('flag_create', False)
         self.token_create = kwargs.get('token_create')
+
+    def validate(self):
+        for field in [self.destination, self.start_location, self.ship_id, self.cargos]:
+            if field is None:
+                return False
+        if self.destination == self.start_location:
+            return False
+        return True
+
+    def create(self, collection):
+        return object_save(collection, self, "cruises")
+
+    def update(self, collection, id_):
+        cruise = find_one(collection, id_, '_id')
+        if cruise is None:
+            return json_response({"Error": "Cruise does not exist"}, 404)
+
+        cruise = Cruise(**cruise)
+        if cruise.edit_token != self.edit_token:
+            return json_response({"Error": "ETag header was invalidated"}, 428)
+
+        self._id = cruise._id
+        return object_update(collection, self)
 
     def to_dict(self):
         return {k: v for k, v in self.__dict__.items() if v is not None}
