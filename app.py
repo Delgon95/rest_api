@@ -79,10 +79,10 @@ def user(user_id):
 def ships():
     if request.method == 'POST':
         ship_data = Ship()
-        return user_data.create(db.ships)
+        return ship_data.create(db.ships)
     return list_all(db.ships, arguments=request.args)
 
-@app.route('/ships/<ships_id>', methods=['GET', 'PUT', 'DELETE'])
+@app.route('/ships/<ship_id>', methods=['GET', 'PUT', 'DELETE'])
 def ship(ship_id):
     if request.method == 'PUT':
         ship_data = Ship(**get_request_data(request))
@@ -127,7 +127,8 @@ def cargo(cargo_id):
     elif request.method == 'GET':
         return find_one_response(db.cargos, cargo_id)
     else:
-        if cargo_data.during_cruise == True:
+        cargo_data = find_one(db.cargos, cargo_id)
+        if cargo_data.get('during_cruise') == True:
             return json_response({"Error": "Cargo during cruise. Cannot modify."}, 400)
 
         delete_many(db.products, {"cargo_id": cargo_id})
@@ -142,14 +143,14 @@ def products(cargo_id):
     cargo = find_one(db.cargos, cargo_id);
     if cargo is None:
         return json_response({"Error": "Cargo not found"}, 404)
-    if cargo.get('during_cruise') == True:
-        return json_response({"Error": "Cargo during cruise. Cannot modify."}, 400)
 
     if request.method == 'POST':
+        if cargo.get('during_cruise') == True:
+            return json_response({"Error": "Cargo during cruise. Cannot modify."}, 400)
         product_data = Product()
-        product.cargo_id = cargo_id
+        product_data.cargo_id = cargo_id
         return product_data.create(db.products)
-    return list_all(db.products, filtrs={"cargo_id": cargo_id}, arguments=request.args)
+    return list_all(db.products, filters={"cargo_id": cargo_id}, arguments=request.args)
 
 @app.route('/cargos/<cargo_id>/products/<product_id>', methods=['GET', 'PUT', 'DELETE'])
 def product(cargo_id, product_id):
@@ -163,23 +164,26 @@ def product(cargo_id, product_id):
         product_data.cargo_id = cargo_id
         old_product_data = find_one(db.products, product_id)
         cargo_data = Cargo(**cargo)
-        if not cargo_data.validate(product_data.size):
-            return json_response({"Error": "Cargo form is invalid"}, 400)
+        if not cargo_data.validate((product_data.size - old_product_data.get('size'))):
+            return json_response({"Error": "Product form is invalid"}, 400)
         if cargo_data.during_cruise:
-            return json_response({"Error": "Cargo during cruise. Cannot modify."}, 400)
-        cargo_data.allocated = cargo_data.allocated + (product_data.size - old_product_data.get('size'))
+            return json_response({"Error": "Product during cruise. Cannot modify."}, 400)
+
+        new_allocation = cargo_data.allocated + (product_data.size - old_product_data.get('size'))
+        
+
+        cargo_data.allocated = new_allocation
         cargo_data.update(db.cargos, cargo_id)
         return product_data.update(db.products, product_id)
     elif request.method == 'GET':
         return find_one_response(db.products, product_id)
     else:
+        product_data = find_one(db.products, product_id)        
         cargo_data = Cargo(**cargo)
-        if not cargo_data.validate(product_data.size):
-            return json_response({"Error": "Cargo form is invalid"}, 400)
         if cargo_data.during_cruise:
-            return json_response({"Error": "Cargo during cruise. Cannot modify."}, 400)
+            return json_response({"Error": "Product during cruise. Cannot modify."}, 400)
 
-        cargo_data.allocated = cargo_data.allocated - product_data.size
+        cargo_data.allocated = cargo_data.allocated - product_data.get('size')
         cargo_data.update(db.cargos, cargo_id)
         return delete_one_response(db.products, product_id)
 
@@ -196,7 +200,7 @@ def cruises():
         return cruise_data.create(db.cruises)
     return list_all(db.cruises, arguments=request.args)
 
-@app.route('/cruise/<cruise_id>', methods=['GET', 'PUT', 'DELETE'])
+@app.route('/cruises/<cruise_id>', methods=['GET', 'PUT', 'DELETE'])
 def cruise(cruise_id):
     if request.method == 'PUT':
         cruise_data = Cruise(**get_request_data(request))
@@ -204,7 +208,7 @@ def cruise(cruise_id):
         if not cruise_data.validate():
             return json_response({"Error": "Cruise form is invalid"}, 400)
 
-        old_cruise_data = find_one(db.cruisea, cruise_id)
+        old_cruise_data = find_one(db.cruises, cruise_id)
         if not old_cruise_data.get('ship_id') == cruise_data.ship_id:
             ship = find_one(db.ships, cruise_data.ship_id)
             if ship is None:
@@ -221,10 +225,15 @@ def cruise(cruise_id):
                 if cargo.get('during_cruise') == True:
                     return json_response({"Error": "Cargo already on course"}, 400)
 
-        if not old_cruise_data.get('ship_id') == cruise_data.ship_id:
-            old_ship = Ship(**find_one(db.ships, old_cruise_data.get('ship_id')))
-            old_ship.during_cruise = False
-            old_ship.update(db.ships, old_ship._id)
+        if not (old_cruise_data.get('ship_id') is None):
+            if not old_cruise_data.get('ship_id') == cruise_data.ship_id:
+                old_ship = Ship(**find_one(db.ships, old_cruise_data.get('ship_id')))
+                old_ship.during_cruise = False
+                old_ship.update(db.ships, old_ship._id)
+
+        new_ship = Ship(**find_one(db.ships, cruise_data.ship_id))
+        new_ship.during_cruise = True
+        new_ship.update(db.ships, new_ship._id)
 
         for cargo_id in old_cargos_list:
             if not cargo_id in cruise_data.cargos:
@@ -232,16 +241,25 @@ def cruise(cruise_id):
                 old_cargo.during_cruise = False
                 old_cargo.update(db.cargos, cargo_id)
 
+        for cargo_id in cruise_data.cargos:
+            if not cargo_id in old_cargos_list:
+                cargo = Cargo(**find_one(db.cargos, cargo_id))
+                cargo.during_cruise = True
+                cargo.update(db.cargos, cargo_id)
+
         return cruise_data.update(db.cruises, cruise_id)
     elif request.method == 'GET':
         return find_one_response(db.cruises, cruise_id)
     else:
         cruise_data = Cruise(**find_one(db.cruises, cruise_id))
-        ship = Shipe(**find_one(db.ships, cruise_data.ship_id))
-        ship.during_cruise = False
-        ship.update(db.ships, ship._id)
-        for cargo_id in cruise_data.cargos:
-            cargo = Cargo(**find(db.cargos, cargo_id))
-            cargo.during_cruise = False
-            cargo.update(db.cargos, cargo_id)
+
+        if not cruise_data.flag_create == False:
+            ship = Ship(**find_one(db.ships, cruise_data.ship_id))
+            ship.during_cruise = False
+            ship.update(db.ships, ship._id)
+            for cargo_id in cruise_data.cargos:
+                cargo = Cargo(**find_one(db.cargos, cargo_id))
+                cargo.during_cruise = False
+                cargo.update(db.cargos, cargo_id)
+
         return delete_one_response(db.cruises, cruise_id)

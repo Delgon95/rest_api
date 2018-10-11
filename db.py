@@ -77,13 +77,18 @@ def list_all(collection, filters=None, arguments=None):
         filters = {}
     filters["flag_create"] = True
 
-    page, items = int(arguments.page, 0), int(arguments.entires, 10)
+    page = 0
+    if arguments.get('page') is not None:
+        page = int(arguments.get('page'))
+    items = 15
+    if arguments.get('items') is not None:
+        items = int(arguments.get('items'))
     for argument in arguments:
-        if argument not in ['page', 'entries']:
+        if argument not in ['page', 'items']:
             filters[argument] = arguments[argument]
 
     count = collection.find(filters).count()
-    data = collection.find(filters).skip(page*items).limit(items)
+    data = collection.find(filters).skip(page * items).limit(items)
 
     entries = [x for x in data]
     for x in entries:

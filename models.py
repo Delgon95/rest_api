@@ -65,7 +65,6 @@ class Ship:
         self._id = kwargs.get('_id')
         self.name = kwargs.get('name')
         self.crew_count = kwargs.get('crew_count')
-        self.during_cruise = kwargs.get('during_cruise', False)
 
         self.during_cruise = kwargs.get('during_cruise', False)
         self.edit_token = kwargs.get('edit_token', str(uuid.uuid4()))
@@ -73,7 +72,7 @@ class Ship:
         self.token_create = kwargs.get('token_create')
 
     def validate(self):
-        for field in [self.name, self.crew_count, self.capacity]:
+        for field in [self.name, self.crew_count]:
             if field is None:
                 return False
         return True
@@ -104,9 +103,9 @@ class Ship:
 class Cargo:
     def __init__(self, **kwargs):
         self._id = kwargs.get('_id')
-        self.capacity = kwargs.get('capacity')
-        self.size = kwargs.get('size')
-        self.allocated = kwargs.get('allocated', 0)
+        self.capacity = int(kwargs.get('capacity', 0))
+        self.size = int(kwargs.get('size', 0))
+        self.allocated = int(kwargs.get('allocated', 0))
         self.during_cruise = kwargs.get('during_cruise', False)
 
         self.edit_token = kwargs.get('edit_token', str(uuid.uuid4()))
@@ -117,8 +116,9 @@ class Cargo:
         for field in [self.capacity, self.size]:
             if field is None:
                 return False
-        if self.capacity < self.allocated + allocation_change or self.allocated + allocation_change < 0:
-            False
+        new_allocated = self.allocated + int(allocation_change)
+        if (self.capacity < new_allocated) or (new_allocated < 0):
+            return False
         return True
 
     def create(self, collection):
@@ -147,7 +147,7 @@ class Cargo:
 class Product:
     def __init__(self, **kwargs):
         self._id = kwargs.get('_id')
-        self.cargo_id = kwargs('cargo_id')
+        self.cargo_id = kwargs.get('cargo_id')
         self.name = kwargs.get('name')
         self.price = kwargs.get('price')
         self.weight = kwargs.get('weight')
@@ -166,7 +166,7 @@ class Product:
         return True
 
     def create(self, collection):
-        return object_save(collection, self, "cargos")
+        return object_save(collection, self, "cargos/" + str(self.cargo_id + "/products"))
 
     def update(self, collection, id_):
         product = find_one(collection, id_, '_id')
@@ -194,7 +194,7 @@ class Cruise:
         self.destination = kwargs.get('destination')
         self.start_location = kwargs.get('start_location')
         self.ship_id = kwargs.get('ship_id')
-        self.cargos = kwargs.get('cargos')
+        self.cargos = kwargs.get('cargos', {})
 
         self.edit_token = kwargs.get('edit_token', str(uuid.uuid4()))
         self.flag_create = kwargs.get('flag_create', False)
